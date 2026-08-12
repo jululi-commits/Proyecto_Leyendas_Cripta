@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Database files (descomentar si no deseas subir la base de datos local)
+# *.db
+
+# IDE settings
+.vscode/
+.idea/
