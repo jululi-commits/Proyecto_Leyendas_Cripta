@@ -3,9 +3,40 @@ import sys
 import sqlite3
 
 # conexion
-conexion = sqlite3.connect("partidas.db")
+conexion = sqlite3.connect("Proyecto_Leyendas_Cripta/Data/partidas.db")
 cursor = conexion.cursor()
 
+
+def init_db():
+    # Crea la tabla para guardar la posición del jugador si no existe
+    cursor.execute(
+        """CREATE TABLE IF NOT EXISTS player_pos (
+            id INTEGER PRIMARY KEY,
+            x REAL,
+            y REAL
+        )"""
+    )
+    conexion.commit()
+
+
+def save_player_pos(x, y):
+    cursor.execute("INSERT OR REPLACE INTO player_pos (id, x, y) VALUES (1, ?, ?)", (x, y))
+    conexion.commit()
+    global save_message, save_message_timer
+    save_message = "Miau! Posición guardada!"
+    save_message_timer = 1.5  # segundos visible
+
+
+def load_player_pos():
+    cursor.execute("SELECT x, y FROM player_pos WHERE id = 1")
+    row = cursor.fetchone()
+    if row:
+        return (row[0], row[1])
+    return None
+
+# estado del mensaje de guardado
+save_message = ""
+save_message_timer = 0.0
 
 class Personaje:
     def __init__(self, x, y, velocidad, image=None, alt_image=None, attack_image=None, hitbox_padding=0):
@@ -74,6 +105,8 @@ class Jugador(Personaje):
         self.attack_duration = 0.16  # segundos
         self.attack_timer = 0.0
         self._attack_pressed_last = False
+        # guardar posición (tecla G) - detección de flanco
+        self._save_pressed_last = False
 
     def handle_input(self, keys, dt):
         dx = 0
@@ -110,6 +143,13 @@ class Jugador(Personaje):
         if attack_pressed and not self._attack_pressed_last:
             self.attack_timer = self.attack_duration
         self._attack_pressed_last = attack_pressed
+
+        # Guardar posición al presionar G (flanco)
+        save_pressed = keys[pygame.K_g]
+        if save_pressed and not self._save_pressed_last:
+            # guardar la posición central actual
+            save_player_pos(self.rect.centerx, self.rect.centery)
+        self._save_pressed_last = save_pressed
 
         # decrementar temporizador de ataque
         if self.attack_timer > 0:
@@ -170,6 +210,12 @@ def scale_image_to_fit(image, max_width, max_height):
 
 def main():
     screen = init_screen(800, 600)
+    # usar las variables de mensaje definidas a nivel de módulo
+    global save_message, save_message_timer
+
+    # Inicializar la tabla en la base de datos y cargar la última posición guardada
+    init_db()
+    last_pos = load_player_pos()
 
     # Cargar sprite del gato (ruta relativa a la carpeta del proyecto)
     gato_img = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_normal.png").convert_alpha()
@@ -185,8 +231,16 @@ def main():
     ataque_img = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_ataque.png").convert_alpha()
     ataque_img = pygame.transform.smoothscale(ataque_img, gato_img.get_size())
 
-    # Crear jugador en el centro (hitbox_padding=5, velocidad aumentada)
-    jugador = Jugador(400, 300, velocidad=300, image=gato_img, alt_image=salto_img, attack_image=ataque_img, hitbox_padding=5)
+    # Crear jugador en la última posición guardada o en el centro
+    if last_pos:
+        start_x, start_y = int(last_pos[0]), int(last_pos[1])
+    else:
+        start_x, start_y = screen.get_rect().center
+
+    jugador = Jugador(start_x, start_y, velocidad=300, image=gato_img, alt_image=salto_img, attack_image=ataque_img, hitbox_padding=5)
+
+    # Fuente para mensajes en pantalla (crear después de pygame.init())
+    font = pygame.font.Font(None, 24)
 
     clock = pygame.time.Clock()
     running = True
@@ -213,6 +267,12 @@ def main():
         # Dibujar
         screen.fill((0, 0, 0))
         jugador.draw(screen)
+
+        if save_message_timer > 0:
+            save_message_timer -= dt
+            text = font.render(save_message, True, (255, 255, 255))
+            screen.blit(text, (10, 10))  # ajustar posición si quieres
+
         pygame.display.flip()
 
     pygame.quit()
