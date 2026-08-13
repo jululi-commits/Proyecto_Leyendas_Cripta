@@ -6,7 +6,6 @@ import sqlite3
 conexion=sqlite3.connect("partidas.db")
 cursor=conexion.cursor()
 
-
 def init_screen(width, height):
     # Se configura la pantalla del juego con el tamaño deseado y fondo negro
     pygame.init()
@@ -41,8 +40,8 @@ def main():
     pygame.quit()
     sys.exit()
 
-if __name__ == "__main__":
-    main()
+#if __name__ == "__main__":
+    #main()
 
 class Personaje:
     def __init__(self, x, y, velocidad):
@@ -63,6 +62,7 @@ class Enemigo(Personaje):
         # Inicializa usando el constructor de la clase base Personaje
         super().__init__(x, y, velocidad)
 
+print("Hello World...")
 
 
 
