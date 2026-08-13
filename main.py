@@ -76,10 +76,13 @@ class Personaje:
         else:
             self.rect = pygame.Rect(x, y, 0, 0)
 
+        # Guardar padding para poder recalcular la hitbox si cambiamos la imagen
+        self.hitbox_padding = hitbox_padding
+
         # Hitbox para colisiones (más pequeña que el rect visual si se pide)
-        if hitbox_padding > 0:
+        if self.hitbox_padding > 0:
             # inflate reduces width/height by the given amounts (total)
-            self.hitbox = self.rect.inflate(-hitbox_padding * 3, -hitbox_padding * 3)
+            self.hitbox = self.rect.inflate(-self.hitbox_padding * 3, -self.hitbox_padding * 3)
         else:
             # por defecto la hitbox coincide con el rect
             self.hitbox = self.rect.copy()
@@ -94,7 +97,8 @@ class Personaje:
         self.hitbox.y += iy
 
     def draw(self, screen):
-        if self.image:
+        # Dibujar la imagen actualmente activa si existe
+        if getattr(self, 'current_image', None) is not None:
             screen.blit(self.current_image, self.rect)
 
 
@@ -461,6 +465,15 @@ def main():
                 jugador.image_right = gato_herido
                 jugador.image_left = pygame.transform.flip(gato_herido, True, False)
                 jugador.current_image = jugador.image_left if jugador.facing == 'left' else jugador.image_right
+                # Actualizar rect y hitbox para la nueva imagen para evitar discrepancias
+                try:
+                    jugador.rect = jugador.current_image.get_rect(center=jugador.rect.center)
+                    if getattr(jugador, 'hitbox_padding', 0) > 0:
+                        jugador.hitbox = jugador.rect.inflate(-jugador.hitbox_padding * 3, -jugador.hitbox_padding * 3)
+                    else:
+                        jugador.hitbox = jugador.rect.copy()
+                except Exception:
+                    pass
             except Exception:
                 pass
             # Cambiar todos los enemigos a la imagen de victoria para ellos
@@ -479,12 +492,15 @@ def main():
 
         # Dibujar
         screen.fill((0, 0, 0))
-        # Parpadeo del jugador si está invulnerable
-        draw_player = True
-        if jugador.invuln_timer > 0:
-            draw_player = (int(jugador.invuln_timer * 10) % 2) == 0
-        if draw_player:
+        # Dibujar jugador: siempre visible en pantalla de derrota, si no, parpadea si es invulnerable
+        if game_over:
             jugador.draw(screen)
+        else:
+            draw_player = True
+            if jugador.invuln_timer > 0:
+                draw_player = (int(jugador.invuln_timer * 10) % 2) == 0
+            if draw_player:
+                jugador.draw(screen)
         # Dibujar enemigos
         for e in enemies:
             e.draw(screen)
