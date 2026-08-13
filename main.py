@@ -40,8 +40,8 @@ def main():
     pygame.quit()
     sys.exit()
 
-#if __name__ == "__main__":
-    #main()
+if __name__ == "__main__":
+    main()
 
 class Personaje:
     def __init__(self, x, y, velocidad):
@@ -61,8 +61,6 @@ class Enemigo(Personaje):
     def __init__(self, x, y, velocidad):
         # Inicializa usando el constructor de la clase base Personaje
         super().__init__(x, y, velocidad)
-
-print("Hello World...")
 
 
 
