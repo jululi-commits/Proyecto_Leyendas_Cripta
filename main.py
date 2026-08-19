@@ -2,9 +2,13 @@ import pygame
 import sys
 import sqlite3
 import random
+from pathlib import Path
+
+# Directorio base del proyecto (la carpeta donde está este archivo main.py)
+BASE_DIR = Path(__file__).resolve().parent
 
 # conexion
-conexion = sqlite3.connect("Proyecto_Leyendas_Cripta/Data/partidas.db")
+conexion = sqlite3.connect(BASE_DIR / "Data" / "partidas.db")
 cursor = conexion.cursor()
 
 
@@ -86,6 +90,13 @@ class Personaje:
         else:
             # por defecto la hitbox coincide con el rect
             self.hitbox = self.rect.copy()
+
+    @property
+    def mask(self):
+        """Retorna la máscara de colisión de píxeles para la imagen actualmente activa."""
+        if getattr(self, 'current_image', None) is not None:
+            return pygame.mask.from_surface(self.current_image)
+        return None
 
     def move(self, dx, dy):
         ix = int(dx)
@@ -265,6 +276,38 @@ def scale_image_to_fit(image, max_width, max_height):
         return image
     return pygame.transform.smoothscale(image, new_size)
 
+def check_pixel_collision(obj1, obj2):
+    """Comprueba colisión en 2 fases:
+    1. Filtro rápido por rectángulo/hitbox (broad-phase)
+    2. Colisión exacta píxel por píxel con máscaras (narrow-phase)
+    """
+    r1 = getattr(obj1, 'hitbox', obj1.rect)
+    r2 = getattr(obj2, 'hitbox', obj2.rect)
+    if not r1.colliderect(r2):
+        return False
+
+    m1 = getattr(obj1, 'mask', None)
+    m2 = getattr(obj2, 'mask', None)
+    if m1 is None or m2 is None:
+        return True
+
+    offset = (obj2.rect.x - obj1.rect.x, obj2.rect.y - obj1.rect.y)
+    return m1.overlap(m2, offset) is not None
+
+def check_attack_collision(attack_rect, enemigo):
+    """Comprueba si el rectángulo de ataque del jugador toca píxeles visibles del enemigo."""
+    if not attack_rect.colliderect(enemigo.rect):
+        return False
+
+    m_enemigo = getattr(enemigo, 'mask', None)
+    if m_enemigo is None:
+        return True
+
+    attack_mask = pygame.Mask((attack_rect.width, attack_rect.height))
+    attack_mask.fill()
+    offset = (enemigo.rect.x - attack_rect.x, enemigo.rect.y - attack_rect.y)
+    return attack_mask.overlap(m_enemigo, offset) is not None
+
 def main():
     screen = init_screen(800, 600)
     # usar las variables de mensaje definidas a nivel de módulo
@@ -274,33 +317,33 @@ def main():
     init_db()
     last_pos = cargar_partida()
 
-    # Cargar sprite del gato (ruta relativa a la carpeta del proyecto)
-    gato_img = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_normal.png").convert_alpha()
+    # Cargar sprite del gato
+    gato_img = pygame.image.load(BASE_DIR / "Assets" / "gato_normal.png").convert_alpha()
 
     # Escalar el sprite al 30% del ancho/alto de la pantalla
     gato_img = scale_image_to_fit(gato_img, screen.get_width() * 0.3, screen.get_height() * 0.3)
 
     # Cargar sprite de salto y escalarlo al mismo tamaño que el sprite principal
-    salto_img = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_salta.png").convert_alpha()
+    salto_img = pygame.image.load(BASE_DIR / "Assets" / "gato_salta.png").convert_alpha()
     salto_img = pygame.transform.smoothscale(salto_img, gato_img.get_size())
 
     # Cargar sprite de ataque y escalarlo al mismo tamaño
-    ataque_img = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_ataque.png").convert_alpha()
+    ataque_img = pygame.image.load(BASE_DIR / "Assets" / "gato_ataque.png").convert_alpha()
     ataque_img = pygame.transform.smoothscale(ataque_img, gato_img.get_size())
 
     # --- Sprites enemigos ---
-    fant_normal = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/fant_normal.png").convert_alpha()
-    fant_enojado = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/fant_enojado.png").convert_alpha()
+    fant_normal = pygame.image.load(BASE_DIR / "Assets" / "fant_normal.png").convert_alpha()
+    fant_enojado = pygame.image.load(BASE_DIR / "Assets" / "fant_enojado.png").convert_alpha()
     # escalar a tamaño apropiado
     max_w = screen.get_width() * 0.18
     max_h = screen.get_height() * 0.18
     fant_normal = scale_image_to_fit(fant_normal, max_w, max_h)
     fant_enojado = scale_image_to_fit(fant_enojado, max_w, max_h)
     # sprite que verán los fantasmas cuando el juego termine (derrota)
-    fant_gana = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/fant_gana.png").convert_alpha()
+    fant_gana = pygame.image.load(BASE_DIR / "Assets" / "fant_gana.png").convert_alpha()
     fant_gana = scale_image_to_fit(fant_gana, max_w, max_h)
     # sprite que verán los fantasmas cuando son heridos (victoria del jugador)
-    fant_herido = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/fant_herido.png").convert_alpha()
+    fant_herido = pygame.image.load(BASE_DIR / "Assets" / "fant_herido.png").convert_alpha()
     fant_herido = scale_image_to_fit(fant_herido, max_w, max_h)
 
     # Crear jugador en la última posición guardada o en el centro
@@ -312,7 +355,7 @@ def main():
     jugador = Jugador(start_x, start_y, velocidad=300, image=gato_img, alt_image=salto_img, attack_image=ataque_img, hitbox_padding=10)
 
     # Sprite del jugador herido para mostrar en la pantalla de derrota
-    gato_herido = pygame.image.load("Proyecto_Leyendas_Cripta/Assets/gato_herido.png").convert_alpha()
+    gato_herido = pygame.image.load(BASE_DIR / "Assets" / "gato_herido.png").convert_alpha()
     gato_herido = pygame.transform.smoothscale(gato_herido, gato_img.get_size())
 
     # Fuente para mensajes en pantalla (crear después de pygame.init())
@@ -417,7 +460,7 @@ def main():
             if attacking:
                 attack_rect = jugador.get_attack_rect()
                 for e in enemies:
-                    if getattr(e, 'active', False) and attack_rect.colliderect(e.hitbox):
+                    if getattr(e, 'active', False) and check_attack_collision(attack_rect, e):
                         e.take_damage(e.hp)
                         # Si al recibir daño pasó a inactivo (murió), actualizar sprite y contabilizarlo
                         if not getattr(e, 'active', True):
@@ -429,9 +472,9 @@ def main():
                                 pass
                             enemies_killed += 1
 
-            # Daño del enemigo al jugador si colisionan y el jugador no es invulnerable
+            # Daño del enemigo al jugador si colisionan píxel a píxel y el jugador no es invulnerable
             for e in enemies:
-                if getattr(e, 'active', False) and e.hitbox.colliderect(jugador.hitbox):
+                if getattr(e, 'active', False) and check_pixel_collision(jugador, e):
                     if jugador.invuln_timer <= 0 and not attacking:
                         jugador.lives -= 1
                         jugador.invuln_timer = jugador.invuln_duration
