@@ -278,11 +278,11 @@ def scale_image_to_fit(image, max_width, max_height):
 
 def check_pixel_collision(obj1, obj2):
     """Comprueba colisión en 2 fases:
-    1. Filtro rápido por rectángulo/hitbox (broad-phase)
+    1. Filtro rápido por rectángulo visual en pantalla (broad-phase)
     2. Colisión exacta píxel por píxel con máscaras (narrow-phase)
     """
-    r1 = getattr(obj1, 'hitbox', obj1.rect)
-    r2 = getattr(obj2, 'hitbox', obj2.rect)
+    r1 = obj1.rect
+    r2 = obj2.rect
     if not r1.colliderect(r2):
         return False
 
@@ -294,22 +294,8 @@ def check_pixel_collision(obj1, obj2):
     offset = (obj2.rect.x - obj1.rect.x, obj2.rect.y - obj1.rect.y)
     return m1.overlap(m2, offset) is not None
 
-def check_attack_collision(attack_rect, enemigo):
-    """Comprueba si el rectángulo de ataque del jugador toca píxeles visibles del enemigo."""
-    if not attack_rect.colliderect(enemigo.rect):
-        return False
-
-    m_enemigo = getattr(enemigo, 'mask', None)
-    if m_enemigo is None:
-        return True
-
-    attack_mask = pygame.Mask((attack_rect.width, attack_rect.height))
-    attack_mask.fill()
-    offset = (enemigo.rect.x - attack_rect.x, enemigo.rect.y - attack_rect.y)
-    return attack_mask.overlap(m_enemigo, offset) is not None
-
 def main():
-    screen = init_screen(800, 600)
+    screen = init_screen(1280, 720)
     # usar las variables de mensaje definidas a nivel de módulo
     global save_message, save_message_timer
 
@@ -317,11 +303,15 @@ def main():
     init_db()
     last_pos = cargar_partida()
 
+    # Cargar fondo del escenario y escalarlo a las dimensiones de la pantalla
+    fondo_img = pygame.image.load(BASE_DIR / "Assets" / "escenario.jpg").convert()
+    fondo_img = pygame.transform.scale(fondo_img, (screen.get_width(), screen.get_height()))
+
     # Cargar sprite del gato
     gato_img = pygame.image.load(BASE_DIR / "Assets" / "gato_normal.png").convert_alpha()
 
     # Escalar el sprite al 30% del ancho/alto de la pantalla
-    gato_img = scale_image_to_fit(gato_img, screen.get_width() * 0.3, screen.get_height() * 0.3)
+    gato_img = scale_image_to_fit(gato_img, screen.get_width() * 0.4, screen.get_height() * 0.4)
 
     # Cargar sprite de salto y escalarlo al mismo tamaño que el sprite principal
     salto_img = pygame.image.load(BASE_DIR / "Assets" / "gato_salta.png").convert_alpha()
@@ -335,8 +325,8 @@ def main():
     fant_normal = pygame.image.load(BASE_DIR / "Assets" / "fant_normal.png").convert_alpha()
     fant_enojado = pygame.image.load(BASE_DIR / "Assets" / "fant_enojado.png").convert_alpha()
     # escalar a tamaño apropiado
-    max_w = screen.get_width() * 0.18
-    max_h = screen.get_height() * 0.18
+    max_w = screen.get_width() * 0.25
+    max_h = screen.get_height() * 0.25
     fant_normal = scale_image_to_fit(fant_normal, max_w, max_h)
     fant_enojado = scale_image_to_fit(fant_enojado, max_w, max_h)
     # sprite que verán los fantasmas cuando el juego termine (derrota)
@@ -352,7 +342,7 @@ def main():
     else:
         start_x, start_y = screen.get_rect().center
 
-    jugador = Jugador(start_x, start_y, velocidad=300, image=gato_img, alt_image=salto_img, attack_image=ataque_img, hitbox_padding=10)
+    jugador = Jugador(start_x, start_y, velocidad=350, image=gato_img, alt_image=salto_img, attack_image=ataque_img, hitbox_padding=10)
 
     # Sprite del jugador herido para mostrar en la pantalla de derrota
     gato_herido = pygame.image.load(BASE_DIR / "Assets" / "gato_herido.png").convert_alpha()
@@ -365,7 +355,7 @@ def main():
     # Enemigos
     enemies = []
     spawn_timer = 0.0
-    spawn_interval = 1.2
+    spawn_interval = 2
     spawn_interval_jitter = 0.8
     enemy_speed = 120
     enemies_crossed = 0
@@ -458,9 +448,8 @@ def main():
         if not game_over and not game_won:
             attacking = jugador.attack_timer > 0
             if attacking:
-                attack_rect = jugador.get_attack_rect()
                 for e in enemies:
-                    if getattr(e, 'active', False) and check_attack_collision(attack_rect, e):
+                    if getattr(e, 'active', False) and check_pixel_collision(jugador, e):
                         e.take_damage(e.hp)
                         # Si al recibir daño pasó a inactivo (murió), actualizar sprite y contabilizarlo
                         if not getattr(e, 'active', True):
@@ -472,7 +461,7 @@ def main():
                                 pass
                             enemies_killed += 1
 
-            # Daño del enemigo al jugador si colisionan píxel a píxel y el jugador no es invulnerable
+            # Daño del enemigo al jugador si colisionan píxel a píxel y el jugador no es invulnerable ni está atacando
             for e in enemies:
                 if getattr(e, 'active', False) and check_pixel_collision(jugador, e):
                     if jugador.invuln_timer <= 0 and not attacking:
@@ -533,8 +522,8 @@ def main():
         # sincronizar el rect visual con la hitbox (mantener centrado)
         jugador.rect.center = jugador.hitbox.center
 
-        # Dibujar
-        screen.fill((0, 0, 0))
+        # Dibujar fondo del escenario
+        screen.blit(fondo_img, (0, 0))
         # Dibujar jugador: siempre visible en pantalla de derrota, si no, parpadea si es invulnerable
         if game_over:
             jugador.draw(screen)
