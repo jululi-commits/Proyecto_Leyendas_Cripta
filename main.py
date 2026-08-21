@@ -118,7 +118,7 @@ class Jugador(Personaje):
         # Inicializa usando el constructor de la clase base Personaje
         super().__init__(x, y, velocidad, image, alt_image, attack_image, hitbox_padding)
         # temporizador para ataque breve
-        self.attack_duration = 0.16  # segundos
+        self.attack_duration = 0.25  # segundos (aumentado para facilitar el impacto)
         self.attack_timer = 0.0
         self._attack_pressed_last = False
         # guardar posición (tecla G) - detección de flanco
@@ -162,6 +162,7 @@ class Jugador(Personaje):
         attack_pressed = keys[pygame.K_SPACE]
         if attack_pressed and not self._attack_pressed_last:
             self.attack_timer = self.attack_duration
+            self.has_hit_boss = False  # Reiniciar control para 1 golpe por zarpazo
         self._attack_pressed_last = attack_pressed
 
         # Guardar posición al presionar G (flanco)
@@ -257,19 +258,33 @@ class Proyectil(Enemigo):
     def __init__(self, x, y, velocidad, image):
         super().__init__(x, y, velocidad=velocidad, image=image, hitbox_padding=2, hp=1)
 
+    def take_damage(self, amount):
+        """Al recibir daño, el proyectil desaparece inmediatamente sin temporizador de muerte ni cambio de sprite."""
+        self.hp -= amount
+        if self.hp <= 0:
+            self.active = False
+            self.dead = True
+
 
 class JefeFinal(Personaje):
     """Clase para el Jefe Final del juego.
-    Hereda de Personaje, posee 10 HP, se queda en una posición fija (velocidad=0) y dispara proyectiles periódicamente."""
-    def __init__(self, x, y, image, projectile_image, hp=10, shoot_interval=1.8):
+    Hereda de Personaje, posee 100 HP, se queda en una posición fija (velocidad=0) y dispara proyectiles con velocidad e intervalos aleatorios."""
+    def __init__(self, x, y, image, projectile_image, hp=100):
         super().__init__(x, y, velocidad=0, image=image, hitbox_padding=10)
         self.hp = hp
         self.max_hp = hp
         self.active = True
         self.dead = False
-        self.shoot_timer = 0.8  # primer disparo a los 0.8s
-        self.shoot_interval = shoot_interval
+        # Primer disparo en un intervalo aleatorio entre 0.5s y 2.0s
+        self.shoot_timer = random.uniform(0.5, 2.0)
         self.projectile_image = projectile_image
+
+        # Refinar la hitbox del cuerpo del Jefe a su núcleo central
+        # (evita que el aura externa del sprite gigante haga daño al jugador desde lejos)
+        w = int(self.rect.width * 0.4)
+        h = int(self.rect.height * 0.6)
+        self.hitbox = pygame.Rect(0, 0, max(1, w), max(1, h))
+        self.hitbox.center = self.rect.center
 
     def update(self, dt):
         """Actualiza el temporizador de disparo del jefe y devuelve un Proyectil cuando el temporizador llega a 0."""
@@ -278,12 +293,21 @@ class JefeFinal(Personaje):
 
         self.shoot_timer -= dt
         if self.shoot_timer <= 0:
-            self.shoot_timer = self.shoot_interval
-            # Crear y retornar un proyectil desde el centro del Jefe
+            # Siguiente disparo en un intervalo aleatorio entre 0.5 y 2.0 segundos
+            self.shoot_timer = random.uniform(0.5, 1.5)
+
+            # Origen aleatorio a la izquierda (detrás del sprite del Jefe)
+            spawn_x = self.rect.left - random.randint(10, 40)
+            # Altura aleatoria en la pantalla (dejando margen superior e inferior)
+            spawn_y = random.randint(50, 670)
+
+            # Velocidad aleatoria entre 280 y 300
+            velocidad_aleatoria = random.uniform(280, 300)
+
             return Proyectil(
-                x=self.rect.right,
-                y=self.rect.centery,
-                velocidad=280,
+                x=spawn_x,
+                y=spawn_y,
+                velocidad=velocidad_aleatoria,
                 image=self.projectile_image
             )
         return None
@@ -384,11 +408,11 @@ def main():
     fant_herido = scale_image_to_fit(fant_herido, max_w, max_h)
 
     # --- Sprites del Jefe Final y Proyectiles ---
-    jefe_img = pygame.image.load(BASE_DIR / "Assets" / "jefe_fantasma.jpg").convert_alpha()
-    jefe_img = scale_image_to_fit(jefe_img, screen.get_width() * 0.25, screen.get_height() * 0.35)
+    jefe_img = pygame.image.load(BASE_DIR / "Assets" / "fant_enojado.png").convert_alpha()
+    jefe_img = scale_image_to_fit(jefe_img, screen.get_width() * 0.66, screen.get_height() * 0.924)
 
-    proyectil_img = pygame.image.load(BASE_DIR / "Assets" / "proyectil_fantasma.jpg").convert_alpha()
-    proyectil_img = scale_image_to_fit(proyectil_img, screen.get_width() * 0.08, screen.get_height() * 0.08)
+    proyectil_img = pygame.image.load(BASE_DIR / "Assets" / "proyectil.png").convert_alpha()
+    proyectil_img = scale_image_to_fit(proyectil_img, screen.get_width() * 0.088, screen.get_height() * 0.088)
 
     # Crear jugador en la última posición guardada o en el centro
     if last_pos:
@@ -411,7 +435,7 @@ def main():
     spawn_timer = 0.0
     spawn_interval = 2
     spawn_interval_jitter = 0.8
-    enemy_speed = 120
+    enemy_speed = 126  # Aumentado un 5% (de 120 a 126)
     enemies_crossed = 0
     enemies_killed = 0
     survival_timer = 120.0  # segundos para sobrevivir
@@ -477,10 +501,10 @@ def main():
 
         # --- Spawn y actualización de enemigos y Jefe ---
         if not game_over and not game_won:
-            # Aparición del Jefe Final tras eliminar 20 enemigos comunes
-            if enemies_killed >= 20 and not jefe_spawned:
+            # Aparición del Jefe Final tras eliminar 15 enemigos comunes
+            if enemies_killed >= 15 and not jefe_spawned:
                 jefe_spawned = True
-                jefe = JefeFinal(x=130, y=screen.get_height() // 2, image=jefe_img, projectile_image=proyectil_img, hp=10)
+                jefe = JefeFinal(x=130, y=screen.get_height() // 2, image=jefe_img, projectile_image=proyectil_img, hp=30)
 
             # Si el jefe está activo, actualiza el lanzamiento de sus proyectiles
             if jefe and jefe.active:
@@ -488,8 +512,11 @@ def main():
                 if nuevo_proyectil:
                     enemies.append(nuevo_proyectil)
 
-            # Spawn de enemigos normales solo si el jefe aún no ha aparecido
-            if not jefe_spawned:
+            # Determinar si la FASE 2 del Jefe está activa (vida al 50% o menos)
+            fase_2 = (jefe and jefe.active and jefe.hp <= jefe.max_hp // 2)
+
+            # Spawn de enemigos normales: solo si el jefe NO ha aparecido O si está en FASE 2
+            if not jefe_spawned or fase_2:
                 spawn_timer -= dt
                 if spawn_timer <= 0:
                     spawn_timer = spawn_interval + random.uniform(-spawn_interval_jitter, spawn_interval_jitter)
@@ -524,33 +551,30 @@ def main():
                 for e in enemies:
                     if getattr(e, 'active', False) and check_pixel_collision(jugador, e):
                         e.take_damage(e.hp)
-                        # Si al recibir daño pasó a inactivo (murió), contabilizarlo
-                        if not getattr(e, 'active', True):
+                        # Si es un enemigo normal y murió, cambiar a sprite herido
+                        if not getattr(e, 'active', True) and not isinstance(e, Proyectil):
                             try:
                                 e.image_right = fant_herido
                                 e.image_left = pygame.transform.flip(fant_herido, True, False)
                                 e.current_image = e.image_right
                             except Exception:
                                 pass
-                            if not isinstance(e, Proyectil):
+                            # Contabilizar muertes solo antes de que aparezca el Jefe
+                            if not jefe_spawned:
                                 enemies_killed += 1
 
-                # Daño del ataque del jugador al Jefe Final
+                # Daño del ataque del jugador al Jefe Final (1 punto de daño por zarpazo)
                 if jefe and jefe.active and check_pixel_collision(jugador, jefe):
-                    jefe.take_damage(1)
+                    if not getattr(jugador, 'has_hit_boss', False):
+                        jefe.take_damage(1)
+                        jugador.has_hit_boss = True
 
-            # Daño de enemigos y proyectiles al jugador
+            # Daño de enemigos y proyectiles al jugador (incluso durante el ataque si el proyectil lo alcanza)
             for e in enemies:
                 if getattr(e, 'active', False) and check_pixel_collision(jugador, e):
-                    if jugador.invuln_timer <= 0 and not attacking:
+                    if jugador.invuln_timer <= 0:
                         jugador.lives -= 1
                         jugador.invuln_timer = jugador.invuln_duration
-
-            # Daño si el jugador choca directamente contra el cuerpo del Jefe
-            if jefe and jefe.active and check_pixel_collision(jugador, jefe):
-                if jugador.invuln_timer <= 0 and not attacking:
-                    jugador.lives -= 1
-                    jugador.invuln_timer = jugador.invuln_duration
 
             # Decrementar temporizador de invulnerabilidad del jugador
             if jugador.invuln_timer > 0:
@@ -608,7 +632,11 @@ def main():
         # Dibujar fondo del escenario
         screen.blit(fondo_img, (0, 0))
 
-        # Dibujar Jefe Final si está activo
+        # Dibujar enemigos y proyectiles (para que queden debajo del Jefe)
+        for e in enemies:
+            e.draw(screen)
+
+        # Dibujar Jefe Final si está activo (encima de los proyectiles)
         if jefe and jefe.active:
             jefe.draw(screen)
 
@@ -621,9 +649,6 @@ def main():
                 draw_player = (int(jugador.invuln_timer * 10) % 2) == 0
             if draw_player:
                 jugador.draw(screen)
-        # Dibujar enemigos y proyectiles
-        for e in enemies:
-            e.draw(screen)
 
         if save_message_timer > 0:
             save_message_timer -= dt
@@ -636,7 +661,10 @@ def main():
 
         # Mostrar barra de vida del Jefe Final en la parte superior central
         if jefe and jefe.active:
-            boss_text = font.render(f"JEFE FINAL - Vida: {jefe.hp}/{jefe.max_hp}", True, (255, 60, 60))
+            if jefe.hp <= jefe.max_hp // 2:
+                boss_text = font.render(f"¡FASE 2! - JEFE FINAL - Vida: {jefe.hp}/{jefe.max_hp}", True, (255, 50, 255))
+            else:
+                boss_text = font.render(f"JEFE FINAL - Vida: {jefe.hp}/{jefe.max_hp}", True, (255, 60, 60))
             boss_rect = boss_text.get_rect(center=(screen.get_width() // 2, 30))
             screen.blit(boss_text, boss_rect)
 
@@ -651,7 +679,7 @@ def main():
         # Contadores en el lado derecho: Fantasmas muertos arriba, Fantasmas que escaparon abajo
         x_right_margin = 10
         # Fantasmas muertos: color VERDE, arriba a la derecha
-        killed_text = font.render(f"Fantasmas muertos: {enemies_killed}/20", True, (0, 255, 0))
+        killed_text = font.render(f"Fantasmas muertos: {enemies_killed}/15", True, (0, 255, 0))
         killed_rect = killed_text.get_rect()
         killed_rect.topright = (screen.get_width() - x_right_margin, 40)
         screen.blit(killed_text, killed_rect)
