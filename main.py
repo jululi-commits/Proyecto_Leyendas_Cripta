@@ -326,7 +326,7 @@ def init_screen(width, height):
     # Se configura la pantalla del juego con el tamaño deseado y fondo negro
     pygame.init()
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("Juego 2D Simple")
+    pygame.display.set_caption("Gatito VS Fantasmas")
     screen.fill((0, 0, 0))
     return screen
 
