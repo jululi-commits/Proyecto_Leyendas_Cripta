@@ -1,3 +1,4 @@
+import os
 import pygame
 import sys
 import random
@@ -222,6 +223,10 @@ def renderizar_escena(screen, font, game_over_font, victory_font, assets, jugado
 
 def main():
     """Punto de entrada principal: inicializa el juego y coordina el bucle de eventos."""
+    db_usuario = os.getenv("DB_USUARIO")
+    db_password = os.getenv("DB_PASSWORD")
+    print(f"Conectando Usuario: {db_usuario}")
+
     screen = init_screen(1280, 720)
     db.init_db()
     last_pos = db.cargar_partida()
