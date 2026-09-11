@@ -8,6 +8,8 @@ from entidades import Personaje, Jugador, Enemigo, Proyectil, JefeFinal
 import db
 from interfaz import dibujar_mensaje_guardado, dibujar_hud, dibujar_pantalla_final
 
+from dotenv import load_dotenv
+
 # Directorio base del proyecto
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -223,6 +225,7 @@ def renderizar_escena(screen, font, game_over_font, victory_font, assets, jugado
 
 def main():
     """Punto de entrada principal: inicializa el juego y coordina el bucle de eventos."""
+    load_dotenv()
     db_usuario = os.getenv("DB_USUARIO")
     db_password = os.getenv("DB_PASSWORD")
     print(f"Conectando Usuario: {db_usuario}")
