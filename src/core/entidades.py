@@ -244,17 +244,18 @@ class EntidadBase(pygame.sprite.Sprite):
     def sincronizar_hitbox(self) -> None:
         """
         Sincroniza el centro de la hitbox matemática con las coordenadas continuas (x, y)
-        y alinea la base del rectángulo visual (rect.midbottom) con la base de la hitbox,
-        garantizando que las patas del personaje toquen el suelo con precisión milimétrica.
+        y alinea el rectángulo visual (rect) sobre la hitbox.
+
+        offset_visual_y: desplazamiento vertical fino entre sprite y hitbox.
+        Un valor positivo baja el sprite (cierra el aire con el suelo).
+        Un valor negativo sube el sprite.
         """
         centro_entero = (round(self._x), round(self._y))
         self.hitbox.center = centro_entero
         if hasattr(self, "rect") and self.rect is not None:
-            offset_y = getattr(self, "offset_visual_y", 0.0)
-            self.rect.midbottom = (
-                self.hitbox.midbottom[0],
-                self.hitbox.midbottom[1] + round(offset_y),
-            )
+            offset_y = round(getattr(self, "offset_visual_y", 0.0))
+            self.rect.centerx = self.hitbox.centerx
+            self.rect.centery = self.hitbox.centery + offset_y
 
     def establecer_velocidad(self, vx: float, vy: float) -> None:
         """
