@@ -3,7 +3,7 @@ from typing import Any, List, Tuple, Dict
 
 from core.escena_base import EscenaBase
 from core.estados import EstadoJuego
-from core.entidades import Jugador
+from core.entidades import Jugador, Enemigo
 import pygame
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -14,10 +14,26 @@ suelo = pygame.Rect(0, 620, 1024, 100)       # Plataforma horizontal inferior
 muroDer = pygame.Rect(960, 200, 64, 420)     # Muro vertical derecho
 Hitboxes_Suelo: list[pygame.Rect] = [suelo, muroDer]
 
+def colision_aabb(box1: pygame.Rect, box2: pygame.Rect) -> bool:
+    """
+    Algoritmo de Colisión AABB (Axis-Aligned Bounding Box).
+    Comprueba el solapamiento entre dos rectángulos alineados con los ejes:
+    - Eje X: box1.left < box2.right Y box1.right > box2.left
+    - Eje Y: box1.top < box2.bottom Y box1.bottom > box2.top
+    """
+    return (
+        box1.left < box2.right
+        and box1.right > box2.left
+        and box1.top < box2.bottom
+        and box1.bottom > box2.top
+    )
+
+
 class EscenaJuego(EscenaBase):
     def __init__(self) -> None:
         super().__init__()
         self.jugador: Jugador | None = None
+        self.enemigo: Enemigo | None = None
 
     def al_entrar(self, **kwargs) -> None:
         """Se ejecuta al iniciar o reiniciar la partida."""
@@ -26,20 +42,19 @@ class EscenaJuego(EscenaBase):
         sprite_gato: pygame.Surface | None = None
 
         # --- Tamaño del personaje: modifica SOLO esta variable ---
-        # El hitbox y el offset se calculan automáticamente a partir de ella.
         ancho_personaje = 200
         alto_personaje = 200
 
         # Proporciones del hitbox calibradas visualmente para gato_normal.png
-        # (68/112 ≈ 0.607 de ancho, 53/112 ≈ 0.473 de alto, offset=9/112 ≈ 0.080)
-        # Si cambiás ancho_personaje/alto_personaje, el alineamiento se mantiene automáticamente.
         HITBOX_RATIO_ANCHO  = 0.607   # fracción del ancho del sprite
         HITBOX_RATIO_ALTO   = 0.473   # fracción del alto del sprite
-        OFFSET_RATIO_VISUAL = 0.080   # fracción del alto del sprite (baja el sprite levemente)
+        OFFSET_RATIO_VISUAL_Y = 0.310   # fracción del alto del sprite
+        OFFSET_RATIO_VISUAL_X = 0.040   # fracción del ancho del sprite
 
         hitbox_ancho_px  = int(ancho_personaje * HITBOX_RATIO_ANCHO)
         hitbox_alto_px   = int(alto_personaje  * HITBOX_RATIO_ALTO)
-        offset_visual_px = alto_personaje * OFFSET_RATIO_VISUAL
+        offset_visual_y  = alto_personaje * OFFSET_RATIO_VISUAL_Y
+        offset_visual_x  = ancho_personaje * OFFSET_RATIO_VISUAL_X  
 
         if ruta_sprite.exists():
             try:
@@ -48,9 +63,9 @@ class EscenaJuego(EscenaBase):
             except Exception as e:
                 print(f"Advertencia: No se pudo cargar el sprite '{ruta_sprite}': {e}")
 
-        # 2. Instanciamos al jugador con hitbox y offset proporcionales al tamaño del sprite
+        # 2. Instanciamos al jugador con hitbox y offset proporcionales
         self.jugador = Jugador(
-            x=500.0,
+            x=300.0,
             y=200.0,
             ancho=ancho_personaje,
             alto=alto_personaje,
@@ -59,28 +74,102 @@ class EscenaJuego(EscenaBase):
             imagen=sprite_gato,
             hitbox_ancho=hitbox_ancho_px,
             hitbox_alto=hitbox_alto_px,
-            offset_visual_y=offset_visual_px,
+            offset_visual_y=offset_visual_y,
+            offset_visual_x=offset_visual_x,
+            hurtbox_margin_x=0,
+            hurtbox_margin_y=0,
+            hurtbox_offset_x=0.0,
+            hurtbox_offset_y=0.0,
+            vida_maxima=100.0,
+        )
+
+        # 3. Instanciamos un enemigo de prueba estático (Fantasma)
+        ruta_fant = ASSETS_DIR / "fant_normal.png"
+        ruta_fant_herido = ASSETS_DIR / "fant_herido.png"
+        sprite_fant: pygame.Surface | None = None
+        sprite_fant_herido: pygame.Surface | None = None
+
+        if ruta_fant.exists():
+            try:
+                img_f = pygame.image.load(str(ruta_fant)).convert_alpha()
+                sprite_fant = pygame.transform.smoothscale(img_f, (120, 120))
+            except Exception as e:
+                print(f"Advertencia al cargar sprite de enemigo: {e}")
+
+        if ruta_fant_herido.exists():
+            try:
+                img_fh = pygame.image.load(str(ruta_fant_herido)).convert_alpha()
+                sprite_fant_herido = pygame.transform.smoothscale(img_fh, (120, 120))
+            except Exception as e:
+                print(f"Advertencia al cargar sprite de enemigo herido: {e}")
+
+        self.enemigo = Enemigo(
+            x=750.0,
+            y=550.0,
+            ancho=120,
+            alto=120,
+            imagen=sprite_fant,
+            imagen_herido=sprite_fant_herido,
+            vida_maxima=100.0,
         )
 
     def manejar_eventos(self, eventos: list[pygame.event.Event]) -> None:
-        pass
+        """Procesa la captura de eventos de teclado para acciones como el ataque."""
+        for evento in eventos:
+            if evento.type == pygame.KEYDOWN:
+                # Tecla de ataque: X, o F
+                if evento.key in (pygame.K_x, pygame.K_f):
+                    if self.jugador:
+                        self.jugador.atacar()
 
     def actualizar(self, dt: float) -> None:
-        """Actualiza la física y el movimiento del jugador resolviendo colisiones."""
-        if self.jugador:
+        """Actualiza la física del jugador, del enemigo y resuelve los impactos AABB e invulnerabilidad."""
+        if self.jugador and self.jugador.activa:
             self.jugador.actualizar(dt, lista_suelo=Hitboxes_Suelo)
 
+        if self.enemigo and self.enemigo.activa:
+            self.enemigo.actualizar(dt, lista_suelo=Hitboxes_Suelo)
+
+            # 1. Ataque del Jugador -> Hurtbox del Enemigo
+            if (
+                self.jugador
+                and self.jugador.activa
+                and self.jugador.atacando
+                and self.jugador.attackbox is not None
+                and self.enemigo.temporizador_invulnerable <= 0.0
+                and id(self.enemigo) not in self.jugador.enemigos_golpeados_en_este_ataque
+            ):
+                if colision_aabb(self.jugador.attackbox, self.enemigo.hurtbox):
+                    dano_jugador = 25.0
+                    self.enemigo.recibir_daño(dano_jugador)
+                    self.jugador.enemigos_golpeados_en_este_ataque.add(id(self.enemigo))
+
+            # 2. Contacto Hurtbox del Enemigo -> Hurtbox del Jugador (Daño al personaje)
+            if (
+                self.jugador
+                and self.jugador.activa
+                and self.jugador.temporizador_invulnerable <= 0.0
+            ):
+                if colision_aabb(self.enemigo.hurtbox, self.jugador.hurtbox):
+                    dano_enemigo = 15.0
+                    self.jugador.recibir_daño(dano_enemigo)
+
     def dibujar(self, pantalla: pygame.Surface) -> None:
-        """Renderiza fondo, personajes, jefe y HUD en pantalla."""
-        pantalla.fill((30, 30, 40))  # O dibujar assets["fondo"]
+        """Renderiza fondo, personajes, enemigo y HUD en pantalla."""
+        pantalla.fill((30, 30, 40))
 
         # Dibujar obstáculos del escenario (Hitboxes_Suelo)
         for obstaculo in Hitboxes_Suelo:
             pygame.draw.rect(pantalla, (60, 70, 95), obstaculo)
             pygame.draw.rect(pantalla, (110, 135, 175), obstaculo, width=2)
 
+        # Dibujar enemigo estático de prueba
+        if self.enemigo:
+            self.enemigo.dibujar(pantalla, depurar_hitbox=True)
+
+        # Dibujar personaje jugador
         if self.jugador:
-            self.jugador.dibujar(pantalla, depurar_hitbox=False)
+            self.jugador.dibujar(pantalla, depurar_hitbox=True)
 
     def cargar_imagen(self,ruta_archivo, alpha=True):
         """Carga y optimiza una imagen desde el disco gestionando excepciones (Principio DRY)."""

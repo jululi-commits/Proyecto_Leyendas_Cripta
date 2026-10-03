@@ -10,8 +10,200 @@ Define la clase base EntidadBase y subclases como Jugador, con soporte para:
 - Rectángulo matemático de colisión (Hitbox).
 - Renderizado y depuración en pantalla.
 """
+from __future__ import annotations
 from typing import Any, List, Optional, Tuple
 import pygame
+
+class ComponenteSalud:
+    """
+    Componente de salud independiente para entidades del motor 2D.
+
+    Siguiendo el principio de Composición sobre Herencia (Composition over Inheritance),
+    este componente puede adjuntarse a cualquier entidad sin necesidad de herencia,
+    manteniendo la lógica de salud completamente desacoplada de la lógica de movimiento,
+    renderizado o cualquier otra responsabilidad de la entidad.
+
+    Garantías matemáticas:
+    - La vida actual siempre se mantiene en el rango cerrado [0, vida_maxima].
+    - El daño y la curación nunca producen valores fuera de ese rango.
+    - La vida máxima debe ser estrictamente positiva (> 0).
+
+    Ejemplo de uso::
+
+        salud = ComponenteSalud(vida_maxima=100)
+        salud.recibir_daño(30)       # vida_actual → 70
+        salud.curar(10)              # vida_actual → 80
+        salud.esta_vivo()            # True
+        salud.porcentaje()           # 0.80
+        salud.recibir_daño(200)      # vida_actual → 0  (clampeo)
+        salud.esta_vivo()            # False
+    """
+
+    def __init__(
+        self,
+        vida_maxima: float,
+        vida_actual: Optional[float] = None,
+    ) -> None:
+        """
+        Inicializa el componente de salud con una vida máxima definida.
+
+        :param vida_maxima: Cantidad máxima de puntos de vida. Debe ser > 0.
+        :param vida_actual: Vida inicial. Si es None, se establece igual a vida_maxima.
+        :raises ValueError: Si vida_maxima no es estrictamente positiva.
+        :raises ValueError: Si vida_actual es negativa o supera vida_maxima.
+        """
+        if vida_maxima <= 0:
+            raise ValueError(
+                f"vida_maxima debe ser un valor estrictamente positivo. "
+                f"Se recibió: {vida_maxima}"
+            )
+
+        self._vida_maxima: float = float(vida_maxima)
+
+        if vida_actual is None:
+            self._vida_actual: float = self._vida_maxima
+        else:
+            if vida_actual < 0 or vida_actual > vida_maxima:
+                raise ValueError(
+                    f"vida_actual debe estar en el rango [0, {vida_maxima}]. "
+                    f"Se recibió: {vida_actual}"
+                )
+            self._vida_actual = float(vida_actual)
+
+    # =========================================================================
+    # Propiedades de Solo Lectura
+    # =========================================================================
+
+    @property
+    def vida_actual(self) -> float:
+        """Obtiene los puntos de vida actuales (siempre en [0, vida_maxima])."""
+        return self._vida_actual
+
+    @property
+    def vida_maxima(self) -> float:
+        """Obtiene los puntos de vida máximos del componente."""
+        return self._vida_maxima
+
+    # =========================================================================
+    # Métodos Matemáticos de Modificación de Salud
+    # =========================================================================
+
+    def recibir_daño(self, cantidad: float) -> float:
+        """
+        Resta una cantidad de puntos de vida, con clampeo al límite inferior (0).
+
+        Si la cantidad de daño supera la vida actual, la vida queda en 0
+        sin producir valores negativos.
+
+        :param cantidad: Puntos de daño a restar. Debe ser >= 0.
+        :return: Daño real aplicado (puede ser menor que 'cantidad' si la vida era baja).
+        :raises ValueError: Si la cantidad es negativa (usar curar() para recuperar vida).
+        """
+        if cantidad < 0:
+            raise ValueError(
+                f"La cantidad de daño no puede ser negativa. "
+                f"Usa curar() para recuperar vida. Se recibió: {cantidad}"
+            )
+
+        daño_real: float = min(cantidad, self._vida_actual)
+        self._vida_actual = max(0.0, self._vida_actual - cantidad)
+        return daño_real
+
+    def curar(self, cantidad: float) -> float:
+        """
+        Suma una cantidad de puntos de vida, con clampeo al límite superior (vida_maxima).
+
+        Si la curación supera la vida máxima, la vida queda en vida_maxima
+        sin producir valores por encima del máximo permitido.
+
+        :param cantidad: Puntos de vida a recuperar. Debe ser >= 0.
+        :return: Curación real aplicada (puede ser menor que 'cantidad' si la vida estaba llena).
+        :raises ValueError: Si la cantidad es negativa (usar recibir_daño() para quitar vida).
+        """
+        if cantidad < 0:
+            raise ValueError(
+                f"La cantidad de curación no puede ser negativa. "
+                f"Usa recibir_daño() para reducir la vida. Se recibió: {cantidad}"
+            )
+
+        espacio_disponible: float = self._vida_maxima - self._vida_actual
+        curación_real: float = min(cantidad, espacio_disponible)
+        self._vida_actual = min(self._vida_maxima, self._vida_actual + cantidad)
+        return curación_real
+
+    def establecer_vida(self, cantidad: float) -> None:
+        """
+        Fija la vida actual en un valor específico, respetando los límites [0, vida_maxima].
+
+        Útil para sincronizar el estado de salud desde una base de datos o guardado.
+
+        :param cantidad: Nuevo valor de vida actual.
+        :raises ValueError: Si la cantidad está fuera del rango [0, vida_maxima].
+        """
+        if cantidad < 0 or cantidad > self._vida_maxima:
+            raise ValueError(
+                f"La vida debe estar en el rango [0, {self._vida_maxima}]. "
+                f"Se recibió: {cantidad}"
+            )
+        self._vida_actual = float(cantidad)
+
+    def reiniciar(self) -> None:
+        """Restaura la vida actual a su valor máximo (vida_maxima)."""
+        self._vida_actual = self._vida_maxima
+
+    # =========================================================================
+    # Métodos de Consulta de Estado
+    # =========================================================================
+
+    def esta_vivo(self) -> bool:
+        """
+        Verifica si la entidad sigue con vida.
+
+        :return: True si la vida actual es estrictamente mayor que 0, False en caso contrario.
+        """
+        return self._vida_actual > 0.0
+
+    def esta_llena(self) -> bool:
+        """
+        Verifica si la vida actual es igual a la vida máxima.
+
+        :return: True si la entidad tiene la vida al máximo, False en caso contrario.
+        """
+        return self._vida_actual >= self._vida_maxima
+
+    def porcentaje(self) -> float:
+        """
+        Calcula el porcentaje de vida restante en el rango [0.0, 1.0].
+
+        Ideal para alimentar barras de vida (HUD) sin acoplar lógica de UI al componente.
+
+        :return: Valor flotante en [0.0, 1.0] representando la fracción de vida actual.
+
+        Ejemplo::
+
+            salud = ComponenteSalud(100)
+            salud.recibir_daño(25)
+            salud.porcentaje()  # → 0.75
+        """
+        return self._vida_actual / self._vida_maxima
+
+    def vida_faltante(self) -> float:
+        """
+        Calcula cuántos puntos de vida faltan para llegar al máximo.
+
+        :return: Diferencia entre vida_maxima y vida_actual (siempre >= 0).
+        """
+        return self._vida_maxima - self._vida_actual
+
+    # =========================================================================
+    # Representación de la Instancia
+    # =========================================================================
+
+    def __repr__(self) -> str:
+        return (
+            f"<ComponenteSalud vida={self._vida_actual:.1f}/{self._vida_maxima:.1f} "
+            f"({self.porcentaje() * 100:.1f}%) vivo={self.esta_vivo()}>"
+        )
 
 
 class EntidadBase(pygame.sprite.Sprite):
@@ -44,6 +236,7 @@ class EntidadBase(pygame.sprite.Sprite):
         color: Tuple[int, int, int] = (255, 255, 255),
         hitbox_ancho: Optional[int] = None,
         hitbox_alto: Optional[int] = None,
+        offset_visual_x: float = 0.0,
         offset_visual_y: float = 0.0,
     ) -> None:
         """
@@ -64,6 +257,9 @@ class EntidadBase(pygame.sprite.Sprite):
         :param hitbox_ancho: Ancho físico de la hitbox (si es None, se usa ancho).
         :param hitbox_alto: Alto físico de la hitbox (si es None, se usa alto).
         :param offset_visual_y: Ajuste vertical fino entre el rect visual y la hitbox.
+                                Un valor positivo baja el sprite respecto a la hitbox.
+        :param offset_visual_x: Ajuste horizontal fino entre el rect visual y la hitbox.
+                                Un valor positivo desplaza el sprite hacia la derecha.
         """
         super().__init__()
 
@@ -79,6 +275,7 @@ class EntidadBase(pygame.sprite.Sprite):
         self.hitbox_ancho: int = int(hitbox_ancho) if hitbox_ancho is not None else self.ancho
         self.hitbox_alto: int = int(hitbox_alto) if hitbox_alto is not None else self.alto
         self.offset_visual_y: float = float(offset_visual_y)
+        self.offset_visual_x: float = float(offset_visual_x)
 
         # Velocidad vectorial en píxeles por segundo (px/s)
         self.vx: float = float(vx)
@@ -120,6 +317,10 @@ class EntidadBase(pygame.sprite.Sprite):
         self.activa: bool = True
         self.viva: bool = True
         self.en_suelo: bool = False
+
+        # Temporizador de invulnerabilidad (tiempo de gracia tras recibir daño)
+        self.temporizador_invulnerable: float = 0.0
+        self.duracion_invulnerabilidad: float = 1.0
 
     # =========================================================================
     # Propiedades para Coordenadas Centrales (x, y) y Parámetros Físicos
@@ -244,18 +445,23 @@ class EntidadBase(pygame.sprite.Sprite):
     def sincronizar_hitbox(self) -> None:
         """
         Sincroniza el centro de la hitbox matemática con las coordenadas continuas (x, y)
-        y alinea el rectángulo visual (rect) sobre la hitbox.
-
-        offset_visual_y: desplazamiento vertical fino entre sprite y hitbox.
-        Un valor positivo baja el sprite (cierra el aire con el suelo).
-        Un valor negativo sube el sprite.
+        y alinea la base del rectángulo visual (rect.midbottom) con la base de la hitbox,
+        garantizando que las patas del personaje toquen el suelo con precisión milimétrica.
         """
         centro_entero = (round(self._x), round(self._y))
         self.hitbox.center = centro_entero
         if hasattr(self, "rect") and self.rect is not None:
             offset_y = round(getattr(self, "offset_visual_y", 0.0))
-            self.rect.centerx = self.hitbox.centerx
-            self.rect.centery = self.hitbox.centery + offset_y
+            offset_x = round(getattr(self, "offset_visual_x", 0.0))
+
+            # Si el sprite está volteado horizontalmente, invertimos el offset visual
+            if getattr(self, "orientacion", "derecha") == "izquierda":
+                offset_x = -offset_x
+
+            self.rect.midbottom = (
+                self.hitbox.midbottom[0] + offset_x,
+                self.hitbox.midbottom[1] + offset_y,
+            )
 
     def establecer_velocidad(self, vx: float, vy: float) -> None:
         """
@@ -398,17 +604,75 @@ class EntidadBase(pygame.sprite.Sprite):
             self._y = self._y + (self.vy * dt)
             self.sincronizar_hitbox()
 
+        # 3. Lógica matemática para reducir el tiempo de invulnerabilidad en cada cuadro renderizado:
+        # temporizador_invulnerable = temporizador_invulnerable - dt
+        if self.temporizador_invulnerable > 0.0:
+            self.temporizador_invulnerable = self.temporizador_invulnerable - dt
+            if self.temporizador_invulnerable <= 0.0:
+                self.temporizador_invulnerable = 0.0
+                if hasattr(self, "imagen_normal") and self.imagen_normal is not None:
+                    if hasattr(self, "salud") and self.salud and self.salud.esta_vivo():
+                        self.image = self.imagen_normal
+                elif hasattr(self, "actualizar_orientacion_sprite"):
+                    self.actualizar_orientacion_sprite()
+
+    def recibir_daño(self, cantidad: float) -> None:
+        """
+        Aplica daño al componente de salud de cualquier entidad si no está en invulnerabilidad.
+        Inmediatamente después del golpe, establece temporizador_invulnerable = 1.0 (segundo de gracia).
+        """
+        if not self.activa:
+            return
+
+        if hasattr(self, "salud") and self.salud is not None:
+            if not self.salud.esta_vivo():
+                return
+
+        if self.temporizador_invulnerable > 0.0:
+            return
+
+        if hasattr(self, "salud") and self.salud is not None:
+            self.salud.recibir_daño(cantidad)
+
+        # Inmediatamente después del golpe, establece 1.0 segundo de gracia
+        self.temporizador_invulnerable = getattr(self, "duracion_invulnerabilidad", 1.0)
+
+        salud_txt = (
+            f"{self.salud.vida_actual:.1f}/{self.salud.vida_maxima:.1f}"
+            if hasattr(self, "salud") and self.salud is not None
+            else "N/A"
+        )
+
+        print(
+            f"💥 [{self.__class__.__name__}] GOLPEADO! Daño: -{cantidad:.1f} HP | "
+            f"Salud restante: {salud_txt} | Invulnerable por {self.temporizador_invulnerable:.1f}s"
+        )
+
+        if hasattr(self, "imagen_herido") and self.imagen_herido is not None:
+            if hasattr(self, "salud") and self.salud and self.salud.esta_vivo():
+                self.image = self.imagen_herido
+
+        if hasattr(self, "salud") and self.salud and not self.salud.esta_vivo():
+            print(f"💀 [{self.__class__.__name__}] DERROTADO!")
+            self.activa = False
+            self.viva = False
+
     def dibujar(self, pantalla: pygame.Surface, depurar_hitbox: bool = False) -> None:
         """
-        Renderiza la entidad sobre la superficie provista.
-
-        Si dispone de una imagen (self.image), la dibuja en pantalla. De lo contrario,
-        dibuja un rectángulo de color según las dimensiones de la hitbox (útil para prototipado).
+        Renderiza la entidad sobre la superficie provista con soporte para parpadeo de invulnerabilidad.
 
         :param pantalla: Superficie de Pygame (pygame.Surface) donde se dibujará la entidad.
         :param depurar_hitbox: Si es True, dibuja el contorno de la hitbox en verde para depuración.
         """
         if not self.activa:
+            return
+
+        # Parpadeo gráfico mientras transcurre el tiempo de invulnerabilidad
+        if self.temporizador_invulnerable > 0.0 and int(self.temporizador_invulnerable * 16) % 2 == 0:
+            if depurar_hitbox:
+                if hasattr(self, "hurtbox") and self.hurtbox is not None:
+                    pygame.draw.rect(pantalla, (0, 180, 255), self.hurtbox, width=1)
+                pygame.draw.rect(pantalla, (0, 255, 0), self.hitbox, width=1)
             return
 
         # Renderizado del sprite o figura de reemplazo
@@ -441,6 +705,10 @@ class Jugador(EntidadBase):
     """
     Subclase especializada para el personaje jugable.
     Habilita por defecto el control por teclado para movimiento sobre el eje X.
+
+    Rectángulos de colisión:
+    - hitbox: rectángulo físico reducido, usado para colisiones con el escenario.
+    - hurtbox: rectángulo que cubre todo el sprite visual, usado para recibir daño.
     """
 
     def __init__(
@@ -459,6 +727,12 @@ class Jugador(EntidadBase):
         hitbox_ancho: Optional[int] = None,
         hitbox_alto: Optional[int] = None,
         offset_visual_y: float = 0.0,
+        offset_visual_x: float = 0.0,
+        hurtbox_margin_x: int = 0,
+        hurtbox_margin_y: int = 0,
+        hurtbox_offset_x: float = 0.0,
+        hurtbox_offset_y: float = 0.0,
+        vida_maxima: float = 100.0,
     ) -> None:
         super().__init__(
             x=x,
@@ -476,4 +750,231 @@ class Jugador(EntidadBase):
             hitbox_ancho=hitbox_ancho,
             hitbox_alto=hitbox_alto,
             offset_visual_y=offset_visual_y,
+            offset_visual_x=offset_visual_x,
         )
+
+        # Componente de salud desacoplado (Composición sobre Herencia)
+        self.salud: ComponenteSalud = ComponenteSalud(vida_maxima=vida_maxima)
+
+        # Márgenes (dimensiones) y desfasajes (posicionamiento) de la hurtbox
+        self.hurtbox_margin_x: int = hurtbox_margin_x
+        self.hurtbox_margin_y: int = hurtbox_margin_y
+        self.hurtbox_offset_x: float = hurtbox_offset_x
+        self.hurtbox_offset_y: float = hurtbox_offset_y
+
+        # Hurtbox: nace y se mantiene alineada a la hitbox física por defecto
+        self.hurtbox: pygame.Rect = self.hitbox.inflate(self.hurtbox_margin_x, self.hurtbox_margin_y)
+
+        # Attackbox: área de impacto de ataque. Comienza apagada / vacía (None)
+        # y se activará temporalmente como un pygame.Rect durante un ataque.
+        self.attackbox: Optional[pygame.Rect] = None
+        self.atacando: bool = False
+        self.duracion_ataque: float = 0.25  # Duración del ataque en segundos (250 ms)
+        self.tiempo_ataque_restante: float = 0.0
+        self.attackbox_ancho: int = int(ancho * 0.7)  # Tamaño proporcional de la caja de ataque
+        self.attackbox_alto: int = int(alto * 0.7)
+
+        # Registro de enemigos ya impactados durante el ataque en curso
+        self.enemigos_golpeados_en_este_ataque: set[int] = set()
+
+    # =========================================================================
+    # Mecánicas de Ataque
+    # =========================================================================
+
+    def atacar(self) -> None:
+        """
+        Activa la maniobra de ataque. Genera la attackbox frente al personaje
+        durante 'duracion_ataque' segundos.
+        """
+        if not self.atacando:
+            self.atacando = True
+            self.tiempo_ataque_restante = self.duracion_ataque
+            self.enemigos_golpeados_en_este_ataque.clear()
+            self.actualizar_attackbox()
+
+    def actualizar_attackbox(self) -> None:
+        """
+        Calcula y posiciona la attackbox inmediatamente frente al personaje
+        según su dirección actual (derecha o izquierda).
+        """
+        if not hasattr(self, "hurtbox") or self.hurtbox is None:
+            return
+
+        alto_box = min(self.attackbox_alto, self.hurtbox.height)
+        pos_y = self.hurtbox.centery - (alto_box // 2)
+
+        if self.orientacion == "izquierda":
+            pos_x = self.hurtbox.left - self.attackbox_ancho
+        else:
+            pos_x = self.hurtbox.right
+
+        self.attackbox = pygame.Rect(pos_x, pos_y, self.attackbox_ancho, alto_box)
+
+    # =========================================================================
+    # Sincronización y Actualización
+    # =========================================================================
+
+    def sincronizar_hitbox(self) -> None:
+        """
+        Extiende la sincronización base para mantener la hurtbox y la attackbox alineadas
+        con la hitbox física (self.hitbox) en cada frame.
+        """
+        super().sincronizar_hitbox()
+        if hasattr(self, "hurtbox") and hasattr(self, "hitbox") and self.hitbox is not None:
+            margin_x = getattr(self, "hurtbox_margin_x", 0)
+            margin_y = getattr(self, "hurtbox_margin_y", 0)
+            off_x = getattr(self, "hurtbox_offset_x", 0.0)
+            off_y = getattr(self, "hurtbox_offset_y", 0.0)
+
+            if getattr(self, "orientacion", "derecha") == "izquierda":
+                off_x = -off_x
+
+            # Nace y se sincroniza a partir de self.hitbox (física)
+            self.hurtbox = self.hitbox.inflate(margin_x, margin_y)
+            self.hurtbox.x += round(off_x)
+            self.hurtbox.y += round(off_y)
+
+        if getattr(self, "atacando", False):
+            self.actualizar_attackbox()
+
+    def actualizar(
+        self,
+        dt: float,
+        teclas: Optional[Any] = None,
+        lista_suelo: Optional[List[Any]] = None,
+    ) -> None:
+        """
+        Actualiza el estado físico y decrementa el temporizador de ataque.
+        """
+        super().actualizar(dt, teclas=teclas, lista_suelo=lista_suelo)
+
+        # Gestión del temporizador del ataque activo
+        if self.atacando:
+            self.tiempo_ataque_restante -= dt
+            if self.tiempo_ataque_restante <= 0.0:
+                self.atacando = False
+                self.attackbox = None
+                self.tiempo_ataque_restante = 0.0
+            else:
+                self.actualizar_attackbox()
+        else:
+            self.attackbox = None
+
+    def dibujar(self, pantalla: pygame.Surface, depurar_hitbox: bool = False) -> None:
+        """
+        Renderiza la entidad y su attackbox (en rojo) cuando esté activa.
+        """
+        super().dibujar(pantalla, depurar_hitbox=depurar_hitbox)
+
+        # Si el ataque está activo, renderizar la attackbox (rojo traslúcido / contorno)
+        if self.attackbox is not None:
+            pygame.draw.rect(pantalla, (255, 60, 60), self.attackbox, width=2)
+
+        if depurar_hitbox and hasattr(self, "hurtbox") and self.hurtbox is not None:
+            pygame.draw.rect(pantalla, (0, 180, 255), self.hurtbox, width=1)
+
+
+class Enemigo(EntidadBase):
+    """
+    Entidad enemiga independiente para pruebas de combate.
+    Dispone de ComponenteSalud, Hurtbox propia, representación gráfica y tiempo de gracia/invulnerabilidad.
+    """
+
+    def __init__(
+        self,
+        x: float,
+        y: float,
+        ancho: int = 64,
+        alto: int = 64,
+        imagen: Optional[pygame.Surface] = None,
+        imagen_herido: Optional[pygame.Surface] = None,
+        vida_maxima: float = 100.0,
+    ) -> None:
+        super().__init__(
+            x=x,
+            y=y,
+            ancho=ancho,
+            alto=alto,
+            controlar_con_teclado=False,
+            imagen=imagen,
+            color=(220, 50, 80),
+        )
+
+        self.salud: ComponenteSalud = ComponenteSalud(vida_maxima=vida_maxima)
+        self.imagen_normal: Optional[pygame.Surface] = imagen
+        self.imagen_herido: Optional[pygame.Surface] = imagen_herido
+        self.hurtbox: pygame.Rect = self.hitbox.copy()
+
+        # Temporizador de invulnerabilidad (tiempo de gracia tras recibir daño)
+        self.temporizador_invulnerable: float = 0.0
+
+    def sincronizar_hitbox(self) -> None:
+        super().sincronizar_hitbox()
+        if hasattr(self, "hurtbox") and hasattr(self, "hitbox") and self.hitbox is not None:
+            self.hurtbox = self.hitbox.copy()
+
+    def recibir_daño(self, cantidad: float) -> None:
+        """Aplica daño al componente de salud si la entidad no está en estado de invulnerabilidad."""
+        if not self.salud.esta_vivo() or self.temporizador_invulnerable > 0.0:
+            return
+
+        self.salud.recibir_daño(cantidad)
+
+        # Inmediatamente después del golpe, establece 1.0 segundo de gracia
+        self.temporizador_invulnerable = 1.0
+
+        print(
+            f"💥 ¡ENEMIGO GOLPEADO! Daño: -{cantidad:.1f} HP | "
+            f"Salud restante: {self.salud.vida_actual:.1f}/{self.salud.vida_maxima:.1f} | "
+            f"Invulnerable por 1.0s"
+        )
+
+        if self.imagen_herido is not None and self.salud.esta_vivo():
+            self.image = self.imagen_herido
+
+        if not self.salud.esta_vivo():
+            print("💀 ¡ENEMIGO DERROTADO!")
+            self.activa = False
+
+    def actualizar(
+        self,
+        dt: float,
+        teclas: Optional[Any] = None,
+        lista_suelo: Optional[List[Any]] = None,
+    ) -> None:
+        """
+        Actualiza la posición y descuenta la invulnerabilidad en cada cuadro renderizado.
+        """
+        super().actualizar(dt, teclas=teclas, lista_suelo=lista_suelo)
+
+        # Lógica matemática para reducir el tiempo de invulnerabilidad en cada cuadro
+        if self.temporizador_invulnerable > 0.0:
+            self.temporizador_invulnerable = self.temporizador_invulnerable - dt
+            if self.temporizador_invulnerable <= 0.0:
+                self.temporizador_invulnerable = 0.0
+                # Al expirar la invulnerabilidad, restaura el sprite normal
+                if self.imagen_normal is not None and self.salud.esta_vivo():
+                    self.image = self.imagen_normal
+
+    def dibujar(self, pantalla: pygame.Surface, depurar_hitbox: bool = False) -> None:
+        if not self.activa:
+            return
+
+        super().dibujar(pantalla, depurar_hitbox=depurar_hitbox)
+
+        # Barra de vida gráfica sobre el enemigo
+        if self.salud.esta_vivo():
+            ancho_bar = self.hitbox.width
+            alto_bar = 6
+            x_bar = self.hitbox.left
+            y_bar = self.hitbox.top - 12
+            porcentaje = self.salud.porcentaje()
+
+            pygame.draw.rect(pantalla, (80, 20, 20), (x_bar, y_bar, ancho_bar, alto_bar))
+            pygame.draw.rect(
+                pantalla, (50, 220, 80), (x_bar, y_bar, int(ancho_bar * porcentaje), alto_bar)
+            )
+            pygame.draw.rect(pantalla, (255, 255, 255), (x_bar, y_bar, ancho_bar, alto_bar), width=1)
+
+        if depurar_hitbox and hasattr(self, "hurtbox") and self.hurtbox is not None:
+            pygame.draw.rect(pantalla, (0, 180, 255), self.hurtbox, width=1)
