@@ -128,7 +128,7 @@ class EscenaJuego(EscenaBase):
             self.jugador.actualizar(dt, lista_suelo=Hitboxes_Suelo)
 
         if self.enemigo and self.enemigo.activa:
-            self.enemigo.actualizar(dt, lista_suelo=Hitboxes_Suelo)
+            self.enemigo.actualizar(dt, lista_suelo=Hitboxes_Suelo, jugador=self.jugador)
 
             # 1. Ataque del Jugador -> Hurtbox del Enemigo
             if (
@@ -144,15 +144,18 @@ class EscenaJuego(EscenaBase):
                     self.enemigo.recibir_daño(dano_jugador)
                     self.jugador.enemigos_golpeados_en_este_ataque.add(id(self.enemigo))
 
-            # 2. Contacto Hurtbox del Enemigo -> Hurtbox del Jugador (Daño al personaje)
+            # 2. Ataque del Enemigo -> Hurtbox del Jugador (solo en estado ATAQUE y con cooldown listo)
             if (
                 self.jugador
                 and self.jugador.activa
                 and self.jugador.temporizador_invulnerable <= 0.0
+                and self.enemigo.estado_actual == "ATAQUE"
+                and self.enemigo.tiempo_ultimo_ataque <= 0.0
             ):
                 if colision_aabb(self.enemigo.hurtbox, self.jugador.hurtbox):
                     dano_enemigo = 15.0
                     self.jugador.recibir_daño(dano_enemigo)
+                    self.enemigo.tiempo_ultimo_ataque = self.enemigo.cooldown_ataque
 
     def dibujar(self, pantalla: pygame.Surface) -> None:
         """Renderiza fondo, personajes, enemigo y HUD en pantalla."""
@@ -165,11 +168,11 @@ class EscenaJuego(EscenaBase):
 
         # Dibujar enemigo estático de prueba
         if self.enemigo:
-            self.enemigo.dibujar(pantalla, depurar_hitbox=True)
+            self.enemigo.dibujar(pantalla, depurar_hitbox=False)
 
         # Dibujar personaje jugador
         if self.jugador:
-            self.jugador.dibujar(pantalla, depurar_hitbox=True)
+            self.jugador.dibujar(pantalla, depurar_hitbox=False)
 
     def cargar_imagen(self,ruta_archivo, alpha=True):
         """Carga y optimiza una imagen desde el disco gestionando excepciones (Principio DRY)."""

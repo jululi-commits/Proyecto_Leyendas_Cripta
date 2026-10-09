@@ -11,7 +11,8 @@ Define la clase base EntidadBase y subclases como Jugador, con soporte para:
 - Renderizado y depuración en pantalla.
 """
 from __future__ import annotations
-from typing import Any, List, Optional, Tuple
+import math
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import pygame
 
 class ComponenteSalud:
@@ -484,6 +485,20 @@ class EntidadBase(pygame.sprite.Sprite):
         self._y += float(dy)
         self.sincronizar_hitbox()
 
+    def calcular_distancia_hitbox(self, otra_entidad: EntidadBase) -> float:
+        """
+        Calcula la distancia euclidiana entre el centro del Hitbox de esta entidad
+        y el centro del Hitbox de otra entidad.
+
+        :param otra_entidad: Instancia de EntidadBase a comparar.
+        :return: Distancia en píxeles (float).
+        """
+        centro_self_x, centro_self_y = self.hitbox.center
+        centro_otro_x, centro_otro_y = otra_entidad.hitbox.center
+        dx = centro_otro_x - centro_self_x
+        dy = centro_otro_y - centro_self_y
+        return math.hypot(dx, dy)
+
     # =========================================================================
     # Métodos del Ciclo de Vida del Motor
     # =========================================================================
@@ -876,8 +891,9 @@ class Jugador(EntidadBase):
 
 class Enemigo(EntidadBase):
     """
-    Entidad enemiga independiente para pruebas de combate.
-    Dispone de ComponenteSalud, Hurtbox propia, representación gráfica y tiempo de gracia/invulnerabilidad.
+    Entidad enemiga controlada por una Máquina de Estados Finitos (FSM).
+    Dispone de ComponenteSalud, Hurtbox propia, representación gráfica, 
+    tiempo de gracia/invulnerabilidad y comportamientos modulares en un diccionario.
     """
 
     def __init__(
@@ -889,6 +905,9 @@ class Enemigo(EntidadBase):
         imagen: Optional[pygame.Surface] = None,
         imagen_herido: Optional[pygame.Surface] = None,
         vida_maxima: float = 100.0,
+        rango_deteccion: float = 300.0,
+        rango_ataque: float = 50.0,
+        puntos_patrulla: Optional[List[Tuple[float, float]]] = None,
     ) -> None:
         super().__init__(
             x=x,
@@ -907,6 +926,29 @@ class Enemigo(EntidadBase):
 
         # Temporizador de invulnerabilidad (tiempo de gracia tras recibir daño)
         self.temporizador_invulnerable: float = 0.0
+
+        # ---------------------------------------------------------------------
+        # PARÁMETROS Y VARIABLES DE LA FSM (IA ENEMIGA)
+        # ---------------------------------------------------------------------
+        self.rango_deteccion: float = rango_deteccion
+        self.rango_ataque: float = rango_ataque
+        self.cooldown_ataque: float = 2.0  # Segundos de espera entre ataques
+        self.tiempo_ultimo_ataque: float = 0.0
+
+        # Puntos de patrulla (por defecto realiza un recorrido horizontal)
+        self.puntos_patrulla: List[Tuple[float, float]] = puntos_patrulla or [
+            (x - 100.0, y),
+            (x + 100.0, y),
+        ]
+        self._indice_patrulla: int = 0
+
+        # Estado inicial y Diccionario de Comportamientos (FSM)
+        self.estado_actual: str = "PATRULLA"
+        self.comportamientos: Dict[str, Callable[[float, Optional[Any]], None]] = {
+            "PATRULLA": self._ejecutar_patrulla,
+            "PERSECUCION": self._ejecutar_persecucion,
+            "ATAQUE": self._ejecutar_ataque,
+        }
 
     def sincronizar_hitbox(self) -> None:
         super().sincronizar_hitbox()
@@ -936,25 +978,111 @@ class Enemigo(EntidadBase):
             print("💀 ¡ENEMIGO DERROTADO!")
             self.activa = False
 
+    # =========================================================================
+    # BUCLE PRINCIPAL DE ACTUALIZACIÓN (CONSULTA Y EJECUTA EL ESTADO ACTUAL)
+    # =========================================================================
+
     def actualizar(
         self,
         dt: float,
         teclas: Optional[Any] = None,
         lista_suelo: Optional[List[Any]] = None,
+        jugador: Optional[Any] = None,
     ) -> None:
         """
-        Actualiza la posición y descuenta la invulnerabilidad en cada cuadro renderizado.
+        Actualiza la posición, descuenta la invulnerabilidad y consulta/ejecuta 
+        el estado actual de la FSM desde el diccionario de comportamientos.
         """
-        super().actualizar(dt, teclas=teclas, lista_suelo=lista_suelo)
+        # Descuento de temporizadores (cooldown de ataque e invulnerabilidad)
+        if self.tiempo_ultimo_ataque > 0.0:
+            self.tiempo_ultimo_ataque = max(0.0, self.tiempo_ultimo_ataque - dt)
 
-        # Lógica matemática para reducir el tiempo de invulnerabilidad en cada cuadro
         if self.temporizador_invulnerable > 0.0:
             self.temporizador_invulnerable = self.temporizador_invulnerable - dt
             if self.temporizador_invulnerable <= 0.0:
                 self.temporizador_invulnerable = 0.0
-                # Al expirar la invulnerabilidad, restaura el sprite normal
                 if self.imagen_normal is not None and self.salud.esta_vivo():
                     self.image = self.imagen_normal
+
+        if self.salud.esta_vivo():
+            # 1. Evaluación de transiciones según la distancia al jugador
+            if jugador is not None:
+                self._evaluar_transiciones(jugador)
+
+            # 2. Consulta y ejecución del estado actual desde el diccionario
+            accion_estado = self.comportamientos.get(self.estado_actual)
+            if accion_estado:
+                accion_estado(dt, jugador)
+
+        # 3. Actualización física base (aplicación de movimiento por subpíxel y gravedad)
+        super().actualizar(dt, teclas=teclas, lista_suelo=lista_suelo)
+
+    # =========================================================================
+    # LÓGICA DE TRANSICIÓN Y MÉTODOS DE ESTADO (FSM MODULAR)
+    # =========================================================================
+
+    def _evaluar_transiciones(self, jugador: Any) -> None:
+        """
+        Evalúa la distancia euclidiana entre el centro del Hitbox del enemigo
+        y el centro del Hitbox del jugador para determinar el estado correspondiente.
+        """
+        distancia = self.calcular_distancia_hitbox(jugador)
+
+        if distancia <= self.rango_ataque:
+            self.cambiar_estado("ATAQUE")
+        elif distancia <= self.rango_deteccion:
+            self.cambiar_estado("PERSECUCION")
+        else:
+            self.cambiar_estado("PATRULLA")
+
+    def cambiar_estado(self, nuevo_estado: str) -> None:
+        """Cambia el estado actual asegurándose de que exista en la FSM."""
+        if nuevo_estado in self.comportamientos and self.estado_actual != nuevo_estado:
+            self.estado_actual = nuevo_estado
+
+    def _ejecutar_patrulla(self, dt: float, jugador: Optional[Any] = None) -> None:
+        """Lógica del estado PATRULLA: oscila entre los puntos de patrulla."""
+        if not self.puntos_patrulla:
+            self.vx = 0.0
+            return
+
+        objetivo_x, _ = self.puntos_patrulla[self._indice_patrulla]
+        dx = objetivo_x - self.x
+
+        if abs(dx) < 5.0:
+            self._indice_patrulla = (self._indice_patrulla + 1) % len(self.puntos_patrulla)
+        else:
+            direccion = 1.0 if dx > 0 else -1.0
+            self.vx = direccion * (self.velocidad_movimiento * 0.5)
+
+    def _ejecutar_persecucion(self, dt: float, jugador: Optional[Any] = None) -> None:
+        """Lógica del estado PERSECUCION: avanza hacia el centro del Hitbox del jugador."""
+        if jugador is None:
+            self.vx = 0.0
+            return
+
+        centro_enemigo_x = self.hitbox.centerx
+        centro_jugador_x = jugador.hitbox.centerx
+        dx = centro_jugador_x - centro_enemigo_x
+
+        if abs(dx) > 0.0:
+            direccion = 1.0 if dx > 0 else -1.0
+            self.vx = direccion * self.velocidad_movimiento
+
+    def _ejecutar_ataque(self, dt: float, jugador: Optional[Any] = None) -> None:
+        """Lógica del estado ATAQUE: detiene el desplazamiento. El daño real se gestiona en la escena."""
+        self.vx = 0.0
+
+    def _realizar_ataque(self, jugador: Optional[Any]) -> None:
+        """Realiza la acción directa de ataque contra la posición del Hitbox del jugador."""
+        if jugador is not None:
+            distancia_hitbox = self.calcular_distancia_hitbox(jugador)
+            print(
+                f"⚔️ ¡ENEMIGO ATACA AL JUGADOR! "
+                f"Distancia entre Hitboxes: {distancia_hitbox:.1f}px | "
+                f"Centro Hitbox Jugador: {jugador.hitbox.center}"
+            )
+
 
     def dibujar(self, pantalla: pygame.Surface, depurar_hitbox: bool = False) -> None:
         if not self.activa:
@@ -978,3 +1106,4 @@ class Enemigo(EntidadBase):
 
         if depurar_hitbox and hasattr(self, "hurtbox") and self.hurtbox is not None:
             pygame.draw.rect(pantalla, (0, 180, 255), self.hurtbox, width=1)
+
