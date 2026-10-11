@@ -12,6 +12,7 @@ from core.estados import EstadoJuego
 from core.gestor_escenas import GestorEscenas
 from escenas.escena_game_over import EscenaGameOver
 from escenas.escena_juego import EscenaJuego
+from escenas.escena_menu import EscenaMenu
 
 def main() -> None:
     # 1. Inicialización de Pygame
@@ -28,13 +29,12 @@ def main() -> None:
     # 2. Instanciación del GestorEscenas y registro en el diccionario de estados
     gestor = GestorEscenas()
 
-    #gestor.agregar_escena(EstadoJuego.MENU, EscenaMenu())
+    gestor.agregar_escena(EstadoJuego.MENU, EscenaMenu())
     gestor.agregar_escena(EstadoJuego.JUEGO, EscenaJuego())
     gestor.agregar_escena(EstadoJuego.GAME_OVER, EscenaGameOver())
 
-    # 3. Establecer la escena inicial
-    #gestor.cambiar_escena(EstadoJuego.MENU)
-    gestor.cambiar_escena(EstadoJuego.JUEGO)
+    # 3. Establecer la escena inicial (iniciar primero en el Menú Principal)
+    gestor.cambiar_escena(EstadoJuego.MENU)
 
     # 4. Bucle principal del juego (Game Loop)
     ejecutando = True

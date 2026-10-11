@@ -5,6 +5,7 @@ class EstadoJuego(str, Enum):
     """
     Enumeración que define las claves de estado disponibles para el GestorEscenas.
     """
+    MENU = "menu"
     JUEGO = "juego"
     PAUSA = "pausa"
     GAME_OVER = "game_over"

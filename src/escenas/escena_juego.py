@@ -4,6 +4,7 @@ from typing import Any, List, Tuple, Dict
 from core.escena_base import EscenaBase
 from core.estados import EstadoJuego
 from core.entidades import Jugador, Enemigo
+from core.interfaz import GestorUi
 import pygame
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -34,6 +35,8 @@ class EscenaJuego(EscenaBase):
         super().__init__()
         self.jugador: Jugador | None = None
         self.enemigo: Enemigo | None = None
+        self.gestor_ui: GestorUi = GestorUi()
+        self.puntaje: int = 0
 
     def al_entrar(self, **kwargs) -> None:
         """Se ejecuta al iniciar o reiniciar la partida."""
@@ -173,6 +176,15 @@ class EscenaJuego(EscenaBase):
         # Dibujar personaje jugador
         if self.jugador:
             self.jugador.dibujar(pantalla, depurar_hitbox=False)
+
+        # ── HUD: se dibuja AL FINAL, en coordenadas absolutas de pantalla ──
+        if self.jugador and self.jugador.salud:
+            self.gestor_ui.dibujar_hud(
+                pantalla,
+                salud_actual=self.jugador.salud.vida_actual,
+                salud_max=self.jugador.salud.vida_maxima,
+                puntaje=self.puntaje,
+            )
 
     def cargar_imagen(self,ruta_archivo, alpha=True):
         """Carga y optimiza una imagen desde el disco gestionando excepciones (Principio DRY)."""
